@@ -18,16 +18,19 @@ TOKEN = os.environ.get('DISCORD_TOKEN')
 FREE_CH = 1479204587104895060
 PREMIUM_CH = 1479080682616520718
 PAID_CH = 1479080682616520717
-LOG_CH = 1479239531499880628 # আপনার দেওয়া নতুন লগ চ্যানেল আইডি
+LOG_CH = 1479239531499880628 
 STAFF_IDS = [1242372804859400195, 1406599824089808967, 1040256699480686604]
 BASE_PATH = "categories/"
 
-if not os.path.exists(BASE_PATH): os.makedirs(BASE_PATH)
+# এরর ফিক্সিং ফোল্ডার চেক
+if not os.path.exists(BASE_PATH):
+    os.makedirs(BASE_PATH, exist_ok=True)
 
-# --- 🗄️ DATABASE ---
+# --- 🗄️ DATABASE SETUP ---
 db = sqlite3.connect("bot_data.db")
 cursor = db.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, gens INTEGER DEFAULT 0, vouches INTEGER DEFAULT 0)")
+cursor.execute("CREATE TABLE IF NOT EXISTS redeem_codes (code TEXT PRIMARY KEY, reward TEXT)")
 db.commit()
 
 class MyBot(commands.Bot):
@@ -35,26 +38,24 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=discord.Intents.all())
     async def setup_hook(self):
         await self.tree.sync()
-        print(f"🚀 Raizen Gen Bot Linked!")
+        print(f"🚀 Raizen Gen Bot Linked & Synced!")
 
 bot = MyBot()
 
 # --- 🛠️ HELPERS ---
 def get_count(service):
-    path = f"{BASE_PATH}{service.capitalize()}.txt"
+    path = os.path.join(BASE_PATH, f"{service.capitalize()}.txt")
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return len([l for l in f.readlines() if l.strip()])
     return 0
 
-# --- 🚀 SLASH COMMANDS ---
+# --- 🚀 MEMBER COMMANDS ---
 
-# ১. /help (স্ক্রিনশটের মতো হুবহু সাজানো)
 @bot.tree.command(name="help", description="Show all available commands")
 async def help(interaction: discord.Interaction):
     embed = discord.Embed(title="📜 Commands — Gen Bot", color=0xFFFFFF)
     embed.description = "All commands use `/`"
-    
     embed.add_field(name="👤 Members", value=(
         "`/gen` — Generate an account\n"
         "`/profile` — View profile & stats\n"
@@ -62,19 +63,16 @@ async def help(interaction: discord.Interaction):
         "`/leaderboard` — Top 10 generators\n"
         "`/stock` — View available stock"
     ), inline=False)
-    
     embed.add_field(name="🛡️ Staff", value=(
-        "`/redeem` — Validate a ticket\n"
+        "`/redeem` — Validate a ticket/code\n"
         "`/add` — Add accounts (attach .txt)\n"
         "`/send` — Send accounts via DM\n"
         "`/remove` — Remove stock\n"
         "`/addv` — Manually add vouches"
     ), inline=False)
-    
     embed.add_field(name="🏷️ Available Tiers", value="🟢 free · 🟣 premium · 🟡 paid", inline=False)
     await interaction.response.send_message(embed=embed)
 
-# ২. /gen (Tier & Service + Channel Check + Logs)
 @bot.tree.command(name="gen", description="Generate an account")
 @app_commands.choices(tier=[
     app_commands.Choice(name="🟢 free", value="free"),
@@ -82,6 +80,7 @@ async def help(interaction: discord.Interaction):
     app_commands.Choice(name="🟡 paid", value="paid")
 ])
 async def gen(interaction: discord.Interaction, tier: app_commands.Choice[str], service: str):
+    # স্ট্যাফরা সব চ্যানেলে পারবে, ইউজাররা শুধু নির্দিষ্ট চ্যানেলে
     if interaction.user.id not in STAFF_IDS:
         if tier.value == "free" and interaction.channel_id != FREE_CH:
             return await interaction.response.send_message(f"❌ Use <#{FREE_CH}> for Free!", ephemeral=True)
@@ -91,10 +90,10 @@ async def gen(interaction: discord.Interaction, tier: app_commands.Choice[str], 
             return await interaction.response.send_message(f"❌ Use <#{PAID_CH}> for Paid!", ephemeral=True)
 
     service_name = service.capitalize()
-    path = f"{BASE_PATH}{service_name}.txt"
+    path = os.path.join(BASE_PATH, f"{service_name}.txt")
 
     if not os.path.exists(path) or get_count(service_name) == 0:
-        return await interaction.response.send_message(f"⚠️ **{service_name}** is out of stock!", ephemeral=True)
+        return await interaction.response.send_message(f"⚠️ **{service_name}** out of stock!", ephemeral=True)
 
     with open(path, "r") as f: lines = f.readlines()
     acc = lines.pop(0).strip()
@@ -105,59 +104,20 @@ async def gen(interaction: discord.Interaction, tier: app_commands.Choice[str], 
         cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (interaction.user.id,))
         cursor.execute("UPDATE users SET gens = gens + 1 WHERE user_id = ?", (interaction.user.id,))
         db.commit()
-        await interaction.response.send_message(f"✅ Your **{service_name}** account sent to DMs!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Sent to DMs!", ephemeral=True)
 
-        # Log Channel
+        # Log Notification
         log_ch = bot.get_channel(LOG_CH)
         if log_ch:
-            log_embed = discord.Embed(title="🚀 New Gen Log", color=0x00FF00)
-            log_embed.add_field(name="User", value=f"{interaction.user.mention} (`{interaction.user.id}`)")
-            log_embed.add_field(name="Service", value=service_name)
-            log_embed.add_field(name="Tier", value=tier.name)
-            await log_ch.send(embed=log_embed)
+            embed = discord.Embed(title="🚀 New Gen Log", color=0x00FF00)
+            embed.add_field(name="User", value=f"{interaction.user.mention}")
+            embed.add_field(name="Service", value=service_name)
+            embed.add_field(name="Tier", value=tier.name)
+            await log_ch.send(embed=embed)
     except:
         with open(path, "a") as f: f.write(acc + "\n")
-        await interaction.response.send_message("❌ DM Closed! Account returned to stock.", ephemeral=True)
+        await interaction.response.send_message("❌ DM Closed! Stock returned.", ephemeral=True)
 
-# ৩. /add (Staff Only - .txt ফাইল দিয়ে স্টক বাড়ানো)
-@bot.tree.command(name="add", description="Add accounts via .txt file")
-@app_commands.choices(tier=[
-    app_commands.Choice(name="🟢 free", value="free"),
-    app_commands.Choice(name="🟣 premium", value="premium"),
-    app_commands.Choice(name="🟡 paid", value="paid")
-])
-async def add(interaction: discord.Interaction, tier: app_commands.Choice[str], service: str, file: discord.Attachment):
-    if interaction.user.id not in STAFF_IDS: return await interaction.response.send_message("❌ Staff only!", ephemeral=True)
-    if not file.filename.endswith(".txt"): return await interaction.response.send_message("❌ Upload a .txt file!", ephemeral=True)
-    
-    content = await file.read()
-    accounts = content.decode("utf-8")
-    
-    with open(f"{BASE_PATH}{service.capitalize()}.txt", "a", encoding="utf-8") as f:
-        f.write(accounts + "\n")
-    
-    await interaction.response.send_message(f"✅ Accounts added to **{service.capitalize()}** ({tier.name})")
-
-# ৪. /remove (Staff Only - স্টক কমানো)
-@bot.tree.command(name="remove", description="Remove amount from stock")
-@app_commands.choices(tier=[
-    app_commands.Choice(name="🟢 free", value="free"),
-    app_commands.Choice(name="🟣 premium", value="premium"),
-    app_commands.Choice(name="🟡 paid", value="paid")
-])
-async def remove(interaction: discord.Interaction, tier: app_commands.Choice[str], service: str, amount: int):
-    if interaction.user.id not in STAFF_IDS: return await interaction.response.send_message("❌ Staff only!", ephemeral=True)
-    path = f"{BASE_PATH}{service.capitalize()}.txt"
-    if not os.path.exists(path): return await interaction.response.send_message("Category not found!", ephemeral=True)
-    
-    with open(path, "r") as f: lines = f.readlines()
-    if len(lines) < amount: amount = len(lines)
-    for _ in range(amount): lines.pop(0)
-    with open(path, "w") as f: f.writelines(lines)
-    
-    await interaction.response.send_message(f"🗑️ Removed `{amount}` accounts from **{service.capitalize()}**.")
-
-# ৫. /stock (স্ক্রিনশটের মতো প্রফেশনাল স্টাইল)
 @bot.tree.command(name="stock", description="Check stock status")
 async def stock(interaction: discord.Interaction):
     embed = discord.Embed(title="📦 Stock — All", color=0xFFFFFF)
@@ -170,36 +130,46 @@ async def stock(interaction: discord.Interaction):
     for title, cats in sections.items():
         text = ""
         for cat in cats:
-            count = get_count(cat)
-            total += count
-            text += f"░░░░░ **{cat}** — {count} accounts\n"
+            c = get_count(cat); total += c
+            text += f"░░░░░ **{cat}** — {c} accounts\n"
         embed.add_field(name=title, value=text, inline=False)
     embed.set_footer(text=f"Total: {total} accounts available")
     await interaction.response.send_message(embed=embed)
 
-# ৬. /send (মেম্বারকে মেনশন করে অ্যাকাউন্ট পাঠানো)
-@bot.tree.command(name="send", description="Send account to member")
+@bot.tree.command(name="profile", description="Check your stats")
+async def profile(interaction: discord.Interaction):
+    cursor.execute("SELECT gens, vouches FROM users WHERE user_id = ?", (interaction.user.id,))
+    row = cursor.fetchone()
+    gens, vouches = (row[0], row[1]) if row else (0, 0)
+    await interaction.response.send_message(f"👤 **{interaction.user.name}**\n📦 Generated: `{gens}`\n⭐ Vouches: `{vouches}`")
+
+# --- 🛡️ STAFF COMMANDS ---
+
+@bot.tree.command(name="add", description="Add accounts via .txt file")
 @app_commands.choices(tier=[
     app_commands.Choice(name="🟢 free", value="free"),
     app_commands.Choice(name="🟣 premium", value="premium"),
     app_commands.Choice(name="🟡 paid", value="paid")
 ])
-async def send_member(interaction: discord.Interaction, member: discord.Member, tier: app_commands.Choice[str], service: str):
+async def add(interaction: discord.Interaction, tier: app_commands.Choice[str], service: str, file: discord.Attachment):
     if interaction.user.id not in STAFF_IDS: return await interaction.response.send_message("❌ Staff only!", ephemeral=True)
-    service_name = service.capitalize()
-    path = f"{BASE_PATH}{service_name}.txt"
-    if not os.path.exists(path) or get_count(service_name) == 0: return await interaction.response.send_message("Stock out!", ephemeral=True)
-    
-    with open(path, "r") as f: lines = f.readlines()
-    acc = lines.pop(0).strip()
-    with open(path, f"w") as f: f.writelines(lines)
-    try:
-        await member.send(f"🎁 **Staff Gift!**\nService: {service_name}\nTier: {tier.name}\nAccount: `{acc}`")
-        await interaction.response.send_message(f"✅ Sent to {member.mention}")
-    except: await interaction.response.send_message("User DM closed!")
+    content = await file.read()
+    with open(os.path.join(BASE_PATH, f"{service.capitalize()}.txt"), "a", encoding="utf-8") as f:
+        f.write(content.decode("utf-8") + "\n")
+    await interaction.response.send_message(f"✅ Added to **{service.capitalize()}** ({tier.name})")
 
-# ৭. /addv (ভাউচ অ্যাড করা)
-@bot.tree.command(name="addv", description="Add vouches")
+@bot.tree.command(name="remove", description="Remove amount from stock")
+async def remove(interaction: discord.Interaction, service: str, amount: int):
+    if interaction.user.id not in STAFF_IDS: return await interaction.response.send_message("❌ Staff only!", ephemeral=True)
+    path = os.path.join(BASE_PATH, f"{service.capitalize()}.txt")
+    if os.path.exists(path):
+        with open(path, "r") as f: lines = f.readlines()
+        new_lines = lines[amount:]
+        with open(path, "w") as f: f.writelines(new_lines)
+        await interaction.response.send_message(f"🗑️ Removed {amount} from {service.capitalize()}.")
+    else: await interaction.response.send_message("❌ Not found!")
+
+@bot.tree.command(name="addv", description="Add vouches to member")
 async def addv(interaction: discord.Interaction, member: discord.Member, amount: int):
     if interaction.user.id not in STAFF_IDS: return await interaction.response.send_message("❌ Staff only!", ephemeral=True)
     cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (member.id,))
@@ -207,7 +177,25 @@ async def addv(interaction: discord.Interaction, member: discord.Member, amount:
     db.commit()
     await interaction.response.send_message(f"⭐ Added {amount} vouches to {member.mention}!")
 
+@bot.tree.command(name="redeem", description="Redeem a reward code")
+async def redeem(interaction: discord.Interaction, code: str):
+    cursor.execute("SELECT reward FROM redeem_codes WHERE code = ?", (code,))
+    row = cursor.fetchone()
+    if row:
+        reward = row[0]
+        cursor.execute("DELETE FROM redeem_codes WHERE code = ?", (code,))
+        db.commit()
+        await interaction.response.send_message(f"🎉 Success! You redeemed: **{reward}**")
+    else: await interaction.response.send_message("❌ Invalid code!", ephemeral=True)
+
+@bot.tree.command(name="create_code", description="Create a redeem code (Staff)")
+async def create_code(interaction: discord.Interaction, code: str, reward: str):
+    if interaction.user.id not in STAFF_IDS: return await interaction.response.send_message("❌ Staff only!", ephemeral=True)
+    cursor.execute("INSERT INTO redeem_codes (code, reward) VALUES (?, ?)", (code, reward))
+    db.commit()
+    await interaction.response.send_message(f"✅ Created code: `{code}` with reward: `{reward}`")
+
 if __name__ == "__main__":
     keep_alive()
     bot.run(TOKEN)
-    
+        
