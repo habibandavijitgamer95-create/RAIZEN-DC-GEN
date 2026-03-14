@@ -37,11 +37,11 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=discord.Intents.all())
     async def setup_hook(self):
         await self.tree.sync()
-        print(f"🚀 Bot is ready with all commands!")
+        print(f"🚀 Raizen Bot: All Commands Synced!")
 
 bot = MyBot()
 
-# --- 🛠️ HELPERS ---
+# --- 🛠️ HELPER ---
 def get_count(service):
     path = f"{BASE_PATH}/{service.capitalize()}.txt"
     if os.path.exists(path):
@@ -66,7 +66,7 @@ async def gen(interaction: discord.Interaction, tier: app_commands.Choice[str], 
     service_name = service.capitalize()
     path = f"{BASE_PATH}/{service_name}.txt"
     if get_count(service_name) == 0:
-        return await interaction.response.send_message(f"⚠️ **{service_name}** out of stock!", ephemeral=True)
+        return await interaction.response.send_message(f"⚠️ **{service_name}** is out of stock!", ephemeral=True)
 
     with open(path, "r") as f: lines = f.readlines()
     acc = lines.pop(0).strip()
@@ -79,9 +79,10 @@ async def gen(interaction: discord.Interaction, tier: app_commands.Choice[str], 
     embed = discord.Embed(title="🎫 Ticket Generated", color=0x00FF00)
     embed.add_field(name="Code:", value=f"**{t_code}**", inline=True)
     embed.add_field(name="Service:", value=f"**{service_name}**", inline=True)
+    embed.set_footer(text="Use /redeem to claim account")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="redeem", description="Claim account with ticket code")
+@bot.tree.command(name="redeem", description="Claim account using ticket code")
 async def redeem(interaction: discord.Interaction, code: str):
     code = code.upper()
     cursor.execute("SELECT service, account, tier FROM tickets WHERE code = ?", (code,))
@@ -93,22 +94,22 @@ async def redeem(interaction: discord.Interaction, code: str):
         cursor.execute("UPDATE users SET gens = gens + 1 WHERE user_id = ?", (interaction.user.id,))
         db.commit()
         try:
-            await interaction.user.send(f"📦 **Claimed!**\nService: **{service}**\nAccount: `{account}`")
+            await interaction.user.send(f"🎁 **Claimed!**\nService: **{service}**\nAccount: `{account}`")
             await interaction.response.send_message(f"✅ Success! It was **{service}**. Check DM!", ephemeral=True)
         except: await interaction.response.send_message("❌ DM Closed!", ephemeral=True)
     else: await interaction.response.send_message("❌ Invalid Code!", ephemeral=True)
 
 @bot.tree.command(name="stock", description="Check all stock")
 async def stock(interaction: discord.Interaction):
-    embed = discord.Embed(title="📦 Live Stock", color=0xFFFFFF)
+    await interaction.response.defer() # ফিক্স: টাইমআউট আটকাবে
+    embed = discord.Embed(title="📦 Live Stock Status", color=0xFFFFFF)
     files = [f for f in os.listdir(BASE_PATH) if f.endswith('.txt')]
-    if not files: return await interaction.response.send_message("Empty stock!")
     desc = ""
     for f in files:
         name = f.replace(".txt", "")
         desc += f"░░░░░ **{name}** — {get_count(name)}\n"
-    embed.description = desc
-    await interaction.response.send_message(embed=embed)
+    embed.description = desc or "Stock is empty!"
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="profile", description="Check your stats")
 async def profile(interaction: discord.Interaction, member: discord.Member = None):
@@ -135,7 +136,7 @@ async def leaderboard(interaction: discord.Interaction):
 ])
 async def add(interaction: discord.Interaction, tier: app_commands.Choice[str], service: str, file: discord.Attachment):
     if interaction.user.id not in STAFF_IDS: return await interaction.response.send_message("❌ Staff only!")
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=True) # ফিক্স: টাইমআউট আটকাবে
     content = await file.read()
     valid = [l for l in content.decode("utf-8").splitlines() if l.strip()]
     path = f"{BASE_PATH}/{service.capitalize()}.txt"
@@ -170,9 +171,9 @@ async def remove(interaction: discord.Interaction, service: str, amount: int):
     if os.path.exists(path):
         with open(path, "r") as f: lines = f.readlines()
         with open(path, "w") as f: f.writelines(lines[amount:])
-        await interaction.response.send_message(f"🗑️ Removed {amount}")
+        await interaction.response.send_message(f"🗑️ Removed {amount} from {service}")
 
 if __name__ == "__main__":
     keep_alive()
     bot.run(TOKEN)
-            
+        
