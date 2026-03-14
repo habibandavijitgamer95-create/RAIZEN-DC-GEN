@@ -3,6 +3,22 @@ from discord import app_commands
 from discord.ext import commands
 import os
 import sqlite3
+from flask import Flask
+from threading import Thread
+
+# --- 🌐 KEEP ALIVE SYSTEM (Render-এর জন্য) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is Alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 # --- ⚙️ CONFIGURATION ---
 OWNER_ID = 1242372804859400195
@@ -53,7 +69,6 @@ def get_progress_bar(count):
 
 @bot.tree.command(name="help", description="Show all available commands")
 async def help(interaction: discord.Interaction):
-    # Fixed: Color.white() replaced with Color.default()
     embed = discord.Embed(title="📜 Commands — Gen Bot", description="All commands use `/`", color=discord.Color.default())
     embed.add_field(name="👥 Members", value="`/gen` `/profile` `/leaderboard` `/stock`", inline=False)
     embed.add_field(name="🛡️ Staff", value="`/add` `/send` `/remove` `/addv` ", inline=False)
@@ -125,5 +140,11 @@ async def add(interaction: discord.Interaction, category: str, account: str):
         f.write(account + "\n")
     await interaction.response.send_message(f"✅ Added to **{category.capitalize()}**.")
 
-bot.run(TOKEN)
-                          
+# --- 🚀 BOT RUN ---
+if __name__ == "__main__":
+    keep_alive() # সার্ভার চালু করবে যাতে Render বন্ধ না করে
+    if TOKEN:
+        bot.run(TOKEN)
+    else:
+        print("❌ TOKEN NOT FOUND!")
+                         
