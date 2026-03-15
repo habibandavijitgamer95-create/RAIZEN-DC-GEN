@@ -37,7 +37,7 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=discord.Intents.all())
     async def setup_hook(self):
         await self.tree.sync()
-        print(f"🚀 Bot Synchronized - 100% Anti-Timeout Active")
+        print(f"🚀 Bot Synchronized - All 10 Commands Ready!")
 
 bot = MyBot()
 
@@ -49,9 +49,18 @@ def get_count(service):
             return sum(1 for line in f if line.strip())
     return 0
 
-# --- 🚀 ALL COMMANDS ---
+# --- 🚀 COMMANDS ---
 
-# ১. GEN COMMAND
+# ১. HELP COMMAND (Added back!)
+@bot.tree.command(name="help", description="Show all commands")
+async def help(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    embed = discord.Embed(title="📜 Commands — Gen Bot", color=0xFFFFFF)
+    embed.add_field(name="👤 Members", value="`/gen` · `/redeem` · `/stock` · `/profile` · `/leaderboard` · `/help`", inline=False)
+    embed.add_field(name="🛡️ Staff", value="`/add` · `/send` · `/remove` · `/addv`", inline=False)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+# ২. GEN COMMAND
 @bot.tree.command(name="gen", description="Generate a ticket code")
 @app_commands.choices(tier=[
     app_commands.Choice(name="🟢 free", value="free"),
@@ -59,7 +68,7 @@ def get_count(service):
     app_commands.Choice(name="🟡 paid", value="paid")
 ])
 async def gen(interaction: discord.Interaction, tier: app_commands.Choice[str], service: str):
-    await interaction.response.defer(ephemeral=True) # <-- Time-out Fix
+    await interaction.response.defer(ephemeral=True)
     
     if interaction.user.id not in STAFF_IDS:
         ch_map = {"free": FREE_CH, "premium": PREMIUM_CH, "paid": PAID_CH}
@@ -84,10 +93,10 @@ async def gen(interaction: discord.Interaction, tier: app_commands.Choice[str], 
     embed.add_field(name="Service:", value=f"**{service_name}**", inline=True)
     await interaction.followup.send(embed=embed, ephemeral=True)
 
-# ২. REDEEM COMMAND
+# ৩. REDEEM COMMAND
 @bot.tree.command(name="redeem", description="Claim account via code")
 async def redeem(interaction: discord.Interaction, code: str):
-    await interaction.response.defer(ephemeral=True) # <-- Time-out Fix
+    await interaction.response.defer(ephemeral=True)
     
     code = code.upper()
     cursor.execute("SELECT service, account, tier FROM tickets WHERE code = ?", (code,))
@@ -104,27 +113,34 @@ async def redeem(interaction: discord.Interaction, code: str):
         except: await interaction.followup.send("❌ DM Closed! Could not send account.", ephemeral=True)
     else: await interaction.followup.send("❌ Invalid Code!", ephemeral=True)
 
-# ৩. STOCK COMMAND
+# ৪. STOCK COMMAND (Super Fixed)
 @bot.tree.command(name="stock", description="Check available accounts")
 async def stock(interaction: discord.Interaction):
-    await interaction.response.defer() # <-- Time-out Fix (No more "did not respond")
-    
-    embed = discord.Embed(title="📦 Stock Status", color=0xFFFFFF)
-    files = [f for f in os.listdir(BASE_PATH) if f.endswith('.txt')]
-    desc = ""
-    for f in files:
-        name = f.replace(".txt", "")
-        count = get_count(name)
-        if count > 0:
-            desc += f"░░░░░ **{name}** — {count}\n"
-    
-    embed.description = desc or "Stock is empty!"
-    await interaction.followup.send(embed=embed)
+    await interaction.response.defer() 
+    try:
+        # Check jodi folder accidentally delete hoye jay
+        if not os.path.exists(BASE_PATH):
+            os.makedirs(BASE_PATH, exist_ok=True)
+            
+        embed = discord.Embed(title="📦 Stock Status", color=0xFFFFFF)
+        files = [f for f in os.listdir(BASE_PATH) if f.endswith('.txt')]
+        desc = ""
+        for f in files:
+            name = f.replace(".txt", "")
+            count = get_count(name)
+            if count > 0:
+                desc += f"░░░░░ **{name}** — {count}\n"
+        
+        embed.description = desc if desc else "Stock is empty!"
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        # Error asle timeout hobe na, error ta dekhabe
+        await interaction.followup.send(f"❌ Stock Error: {str(e)}")
 
-# ৪. PROFILE COMMAND
+# ৫. PROFILE COMMAND
 @bot.tree.command(name="profile", description="Check stats")
 async def profile(interaction: discord.Interaction, member: discord.Member = None):
-    await interaction.response.defer() # <-- Time-out Fix
+    await interaction.response.defer()
     
     target = member or interaction.user
     cursor.execute("SELECT gens, vouches FROM users WHERE user_id = ?", (target.id,))
@@ -132,17 +148,17 @@ async def profile(interaction: discord.Interaction, member: discord.Member = Non
     g, v = (row[0], row[1]) if row else (0, 0)
     await interaction.followup.send(f"👤 **{target.name}**\n📦 Gens: `{g}` | ⭐ Vouches: `{v}`")
 
-# ৫. LEADERBOARD COMMAND
+# ৬. LEADERBOARD COMMAND
 @bot.tree.command(name="leaderboard", description="Top 10 users")
 async def leaderboard(interaction: discord.Interaction):
-    await interaction.response.defer() # <-- Time-out Fix
+    await interaction.response.defer()
     
     cursor.execute("SELECT user_id, gens FROM users ORDER BY gens DESC LIMIT 10")
     rows = cursor.fetchall()
     lb = "\n".join([f"**{i+1}.** <@{r[0]}> — `{r[1]}`" for i, r in enumerate(rows)])
     await interaction.followup.send(embed=discord.Embed(title="🏆 Leaderboard", description=lb or "No data"))
 
-# ৬. ADD COMMAND
+# ৭. ADD COMMAND
 @bot.tree.command(name="add", description="Add stock via file")
 @app_commands.choices(tier=[
     app_commands.Choice(name="🟢 free", value="free"),
@@ -150,7 +166,7 @@ async def leaderboard(interaction: discord.Interaction):
     app_commands.Choice(name="🟡 paid", value="paid")
 ])
 async def add(interaction: discord.Interaction, tier: app_commands.Choice[str], service: str, file: discord.Attachment):
-    await interaction.response.defer(ephemeral=True) # <-- Time-out Fix
+    await interaction.response.defer(ephemeral=True)
     
     if interaction.user.id not in STAFF_IDS: 
         return await interaction.followup.send("❌ Staff only!")
@@ -162,10 +178,10 @@ async def add(interaction: discord.Interaction, tier: app_commands.Choice[str], 
         for line in valid: f.write(line + "\n")
     await interaction.followup.send(f"✅ Added {len(valid)} accounts to **{service.capitalize()}**")
 
-# ৭. ADDV COMMAND
+# ৮. ADDV COMMAND
 @bot.tree.command(name="addv", description="Add vouches to user")
 async def addv(interaction: discord.Interaction, member: discord.Member, amount: int):
-    await interaction.response.defer() # <-- Time-out Fix
+    await interaction.response.defer()
     
     if interaction.user.id not in STAFF_IDS: 
         return await interaction.followup.send("❌ Staff only!")
@@ -175,10 +191,10 @@ async def addv(interaction: discord.Interaction, member: discord.Member, amount:
     db.commit()
     await interaction.followup.send(f"✅ Added {amount} vouches to {member.mention}")
 
-# ৮. SEND COMMAND
+# ৯. SEND COMMAND
 @bot.tree.command(name="send", description="Send account directly")
 async def send(interaction: discord.Interaction, member: discord.Member, service: str):
-    await interaction.response.defer(ephemeral=True) # <-- Time-out Fix
+    await interaction.response.defer(ephemeral=True)
     
     if interaction.user.id not in STAFF_IDS: 
         return await interaction.followup.send("❌ Staff only!")
@@ -196,10 +212,10 @@ async def send(interaction: discord.Interaction, member: discord.Member, service
     else:
         await interaction.followup.send("⚠️ Out of stock!")
 
-# ৯. REMOVE COMMAND
+# ১০. REMOVE COMMAND
 @bot.tree.command(name="remove", description="Remove stock amount")
 async def remove(interaction: discord.Interaction, service: str, amount: int):
-    await interaction.response.defer(ephemeral=True) # <-- Time-out Fix
+    await interaction.response.defer(ephemeral=True)
     
     if interaction.user.id not in STAFF_IDS: 
         return await interaction.followup.send("❌ Staff only!")
@@ -215,4 +231,4 @@ async def remove(interaction: discord.Interaction, service: str, amount: int):
 if __name__ == "__main__":
     keep_alive()
     bot.run(TOKEN)
-              
+                  
